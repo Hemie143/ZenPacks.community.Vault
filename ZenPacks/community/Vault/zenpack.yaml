@@ -20,6 +20,12 @@ classes:
         grid_display: false
       cluster_id:
         grid_display: false
+      unavailable_nodes:
+        grid_display: false
+        type: lines
+      sealed_nodes:
+        grid_display: false
+        type: lines
 
   VaultInstance:
     base: [zenpacklib.Component]
@@ -51,14 +57,14 @@ classes:
         datapoint: vaultinstance_sealed
         datapoint_cached: true
         datapoint_default: 0
-      standby:
+      active:
         grid_display: true
         label: Standby
         enum:
           0: 'Unknown'
           1: 'Standby'
           2: 'Active'
-        datapoint: vaultinstance_standby
+        datapoint: vaultinstance_active
         datapoint_cached: true
         datapoint_default: 0
       replication_performance_mode:
@@ -68,6 +74,9 @@ classes:
         type: boolean
       replication_dr_mode:
         grid_display: false
+      host:
+        grid_display: false
+
 
 class_relationships:
   - ZenPacks.zenoss.LinuxMonitor.LinuxDevice.LinuxDevice(vaultClusters) 1:MC (linuxDevice)VaultCluster
@@ -78,20 +87,6 @@ device_classes:
     zProperties:
       zPingMonitorIgnore: false
       zSnmpMonitorIgnore: true
-      zCollectorPlugins:
-        - zenoss.cmd.uname
-        - zenoss.cmd.linux.df
-        - zenoss.cmd.linux.cpuinfo
-        - zenoss.cmd.linux.interfaces
-        - zenoss.cmd.linux.lvm
-        - zenoss.cmd.linux.memory
-        - zenoss.cmd.linux.netstat_an
-        - zenoss.cmd.linux.netstat_rn
-        - zenoss.cmd.linux.process
-        - zenoss.cmd.linux.sudo_dmidecode
-        - zenoss.cmd.linux.os_release
-        - zenoss.cmd.linux.os_service
-        - community.json.vault
 
     templates:
       VaultCluster:
@@ -107,6 +102,17 @@ device_classes:
                 rrdtype: GAUGE_MIN_0
               num_active:
                 rrdtype: GAUGE_MIN_0
+        thresholds:
+          Unavail:
+            dsnames:
+            - cluster_num_unavailable
+            eventClass: /Status/Vault/Cluster/Unavailable
+            maxval: '1'
+          Sealed:
+            dsnames:
+            - cluster_num_sealed
+            eventClass: /Status/Vault/Cluster/Sealed
+            maxval: '1'
         graphs:
           Nodes Sealed:
             units: nodes
@@ -115,7 +121,6 @@ device_classes:
               Nodes Sealed:
                 lineType: AREA
                 dpName: cluster_num_sealed
-                sequence: 1
           Nodes Unavailable:
             units: nodes
             miny: 0
@@ -123,7 +128,6 @@ device_classes:
               Nodes Unavailable:
                 lineType: AREA
                 dpName: cluster_num_unavailable
-                sequence: 1
           Nodes Active:
             units: nodes
             miny: 0
@@ -131,7 +135,6 @@ device_classes:
               Nodes Active:
                 lineType: AREA
                 dpName: cluster_num_active
-                sequence: 1
 
       VaultInstance:
         targetPythonClass: ZenPacks.community.Vault.VaultInstance
@@ -146,3 +149,48 @@ device_classes:
                 rrdtype: GAUGE_MIN_0_MAX_1
               active:
                 rrdtype: GAUGE_MIN_0_MAX_2
+        graphs:
+          Sealed:
+            miny: 0
+            maxy: 1
+            units: (0=Unsealed, 1=Sealed)
+            graphpoints:
+              Sealed:
+                lineType: AREA
+                dpName: vaultinstance_sealed
+
+event_classes:
+  /Status/Vault:
+    remove: false
+  /Status/Vault/Cluster:
+    remove: false
+  /Status/Vault/Cluster/Sealed:
+    remove: false
+    transform: |-
+      if 'cluster_num_sealed' in evt.eventKey:
+        if evt.current == 0:
+          message = 'Vault Cluster {} - All nodes are unsealed'
+          summary = message
+        else:
+          sealed_nodes = component.get_sealed_nodes()
+          message = 'Vault Cluster {} - The following nodes are sealed: {}'.format(component.title, ', '.join(sealed_nodes))
+          summary = 'Vault Cluster {} - Nodes are sealed'.format(component.title)
+        evt.message = message
+        evt.summary = summary
+
+  /Status/Vault/Cluster/Unavailable:
+    remove: false
+    transform: |-
+      if 'cluster_num_unavailable' in evt.eventKey:
+        if evt.current == 0:
+          message = 'Vault Cluster {} - All nodes are available'
+          summary = message
+        else:
+          unavail_nodes = component.get_unavailable_nodes()
+          message = 'Vault Cluster {} - The following nodes are unavailable: {}'.format(component.title, ', '.join(unavail_nodes))
+          summary = 'Vault Cluster {} - Nodes are unavailable'.format(component.title)
+        evt.message = message
+        evt.summary = summary
+
+  /Status/Vault/Instance:
+    remove: false
