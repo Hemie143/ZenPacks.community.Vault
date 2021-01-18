@@ -1,0 +1,148 @@
+name: ZenPacks.community.Vault
+
+zProperties:
+  DEFAULTS:
+    category: Vault
+  zVaultPort:
+    type: int
+    default: 8200
+  zVaultInstances:
+    type: lines
+    default: []
+
+classes:
+  VaultCluster:
+    base: [zenpacklib.Component]
+    label: Vault Cluster
+    monitoring_templates: [VaultCluster]
+    properties:
+      cluster_name:
+        grid_display: false
+      cluster_id:
+        grid_display: false
+
+  VaultInstance:
+    base: [zenpacklib.Component]
+    label: Vault Instance
+    monitoring_templates: [VaultInstance]
+    relationships:
+      vaultCluster:
+        label_width: 20
+    properties:
+      cluster_name:
+        grid_display: false
+      version:
+        grid_display: false
+      initialized:
+        grid_display: true
+        label: Initialized
+        enum:
+          0: 'Not initialized'
+          1: 'Initialized'
+        datapoint: vaultinstance_init
+        datapoint_cached: true
+        datapoint_default: 0
+      sealed:
+        grid_display: true
+        label: Sealed
+        enum:
+          0: 'Unsealed'
+          1: 'Sealed'
+        datapoint: vaultinstance_sealed
+        datapoint_cached: true
+        datapoint_default: 0
+      standby:
+        grid_display: true
+        label: Standby
+        enum:
+          0: 'Unknown'
+          1: 'Standby'
+          2: 'Active'
+        datapoint: vaultinstance_standby
+        datapoint_cached: true
+        datapoint_default: 0
+      replication_performance_mode:
+        grid_display: false
+      performance_standby:
+        grid_display: false
+        type: boolean
+      replication_dr_mode:
+        grid_display: false
+
+class_relationships:
+  - ZenPacks.zenoss.LinuxMonitor.LinuxDevice.LinuxDevice(vaultClusters) 1:MC (linuxDevice)VaultCluster
+  - VaultCluster(vaultInstances) 1:MC (vaultCluster)VaultInstance
+
+device_classes:
+  /Server/SSH/Linux/Vault:
+    zProperties:
+      zPingMonitorIgnore: false
+      zSnmpMonitorIgnore: true
+      zCollectorPlugins:
+        - zenoss.cmd.uname
+        - zenoss.cmd.linux.df
+        - zenoss.cmd.linux.cpuinfo
+        - zenoss.cmd.linux.interfaces
+        - zenoss.cmd.linux.lvm
+        - zenoss.cmd.linux.memory
+        - zenoss.cmd.linux.netstat_an
+        - zenoss.cmd.linux.netstat_rn
+        - zenoss.cmd.linux.process
+        - zenoss.cmd.linux.sudo_dmidecode
+        - zenoss.cmd.linux.os_release
+        - zenoss.cmd.linux.os_service
+        - community.json.vault
+
+    templates:
+      VaultCluster:
+        targetPythonClass: ZenPacks.community.Vault.VaultCluster
+        datasources:
+          cluster:
+            type: Python
+            plugin_classname: ZenPacks.community.Vault.dsplugins.vault.Vault
+            datapoints:
+              num_sealed:
+                rrdtype: GAUGE_MIN_0
+              num_unavailable:
+                rrdtype: GAUGE_MIN_0
+              num_active:
+                rrdtype: GAUGE_MIN_0
+        graphs:
+          Nodes Sealed:
+            units: nodes
+            miny: 0
+            graphpoints:
+              Nodes Sealed:
+                lineType: AREA
+                dpName: cluster_num_sealed
+                sequence: 1
+          Nodes Unavailable:
+            units: nodes
+            miny: 0
+            graphpoints:
+              Nodes Unavailable:
+                lineType: AREA
+                dpName: cluster_num_unavailable
+                sequence: 1
+          Nodes Active:
+            units: nodes
+            miny: 0
+            graphpoints:
+              Nodes Active:
+                lineType: AREA
+                dpName: cluster_num_active
+                sequence: 1
+
+      VaultInstance:
+        targetPythonClass: ZenPacks.community.Vault.VaultInstance
+        datasources:
+          vaultinstance:
+            type: Python
+            plugin_classname: ZenPacks.community.Vault.dsplugins.vault.Vault
+            datapoints:
+              sealed:
+                rrdtype: GAUGE_MIN_0_MAX_1
+              init:
+                rrdtype: GAUGE_MIN_0_MAX_1
+              active:
+                rrdtype: GAUGE_MIN_0_MAX_2
