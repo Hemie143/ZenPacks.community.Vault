@@ -61,7 +61,7 @@ classes:
         grid_display: true
         label: Standby
         enum:
-          0: 'Unknown'
+          0: 'Unavailable'
           1: 'Standby'
           2: 'Active'
         datapoint: vaultinstance_active
@@ -76,7 +76,6 @@ classes:
         grid_display: false
       host:
         grid_display: false
-
 
 class_relationships:
   - ZenPacks.zenoss.LinuxMonitor.LinuxDevice.LinuxDevice(vaultClusters) 1:MC (linuxDevice)VaultCluster
@@ -149,6 +148,21 @@ device_classes:
                 rrdtype: GAUGE_MIN_0_MAX_1
               active:
                 rrdtype: GAUGE_MIN_0_MAX_2
+        thresholds:
+          Unavailable:
+            type: DurationThreshold
+            dsnames:
+            - vaultinstance_active
+            eventClass: /Status/Vault/Instance/Unavailable
+            minval: '0.5'
+            timePeriod: 60 minutes
+          Sealed:
+            type: DurationThreshold
+            dsnames:
+            - vaultinstance_sealed
+            eventClass: /Status/Vault/Instance/Sealed
+            maxval: '0'
+            timePeriod: 10 minutes
         graphs:
           Sealed:
             miny: 0
@@ -183,7 +197,7 @@ event_classes:
     transform: |-
       if 'cluster_num_unavailable' in evt.eventKey:
         if evt.current == 0:
-          message = 'Vault Cluster {} - All nodes are available'
+          message = 'Vault Cluster {} - All nodes are available'.format(component.title)
           summary = message
         else:
           unavail_nodes = component.get_unavailable_nodes()
@@ -194,3 +208,40 @@ event_classes:
 
   /Status/Vault/Instance:
     remove: false
+
+  /Status/Vault/Instance/Unavailable:
+    remove: false
+    transform: |-
+      if 'vaultinstance_active' in evt.eventKey:
+        map_value = {
+          0: 'unavailable',
+          1: 'in standby',
+          2: 'active',
+        }
+        unavail_value = int(float(evt.current))
+        if unavail_value == 0:
+          message = 'Vault Node {} is {} for more than {}'.format(component.title,
+                                                                  map_value[unavail_value],
+                                                                  evt.timePeriod)
+        else:
+          message = 'Vault Node {} is {}'.format(component.title, map_value[unavail_value])
+        evt.message = message
+        evt.summary = message
+
+  /Status/Vault/Instance/Sealed:
+    remove: false
+    transform: |-
+      if 'vaultinstance_sealed' in evt.eventKey:
+        map_value = {
+          0: 'unsealed',
+          1: 'sealed',
+        }
+        sealed_value = int(float(evt.current))
+        if sealed_value == 1:
+          message = 'Vault Node {} is {} for more than {}'.format(component.title,
+                                                                  map_value[sealed_value],
+                                                                  evt.timePeriod)
+        else:
+          message = 'Vault Node {} is {}'.format(component.title, map_value[sealed_value])
+        evt.message = message
+        evt.summary = message

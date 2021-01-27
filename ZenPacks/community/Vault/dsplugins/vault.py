@@ -152,7 +152,7 @@ class Vault(PythonDataSourcePlugin):
                         break
                 # Update cluster metrics
                 cluster_metrics[cluster]['num_unavailable'] = cluster_metrics[cluster]['num_unavailable'] + 1
-                data['values'][component]['active'] = 0     # Unknown
+                data['values'][component]['active'] = 0     # Unavailable
                 # Add instance to list of unavail instances
                 cluster_messages[cluster]['unavailable'].append(instance)
             else:
@@ -162,7 +162,7 @@ class Vault(PythonDataSourcePlugin):
                 sealed = 1 if health['sealed'] else 0
                 if sealed:
                     cluster_messages[cluster]['sealed'].append(instance)
-                active = 1 if health['standby'] else 2      # active: 0=unknown, 1=standby, 2=active
+                active = 1 if health['standby'] else 2      # active: 0=unavailable, 1=standby, 2=active
                 cluster_metrics[cluster]['num_sealed'] = cluster_metrics[cluster]['num_sealed'] + sealed
                 cluster_metrics[cluster]['num_active'] = cluster_metrics[cluster]['num_active'] + active - 1
                 data['values'][component]['sealed'] = sealed
