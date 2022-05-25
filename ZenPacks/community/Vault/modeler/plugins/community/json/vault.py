@@ -1,27 +1,17 @@
 # stdlib Imports
 import json
-import base64
-
-# Twisted Imports
-from twisted.internet.defer import inlineCallbacks, returnValue
-from twisted.web.client import Agent, readBody, BrowserLikePolicyForHTTPS
-from twisted.internet import reactor, ssl
-from twisted.web.http_headers import Headers
-from twisted.web.iweb import IPolicyForHTTPS
 
 # Zenoss Imports
 from Products.DataCollector.plugins.CollectorPlugin import PythonPlugin
 from Products.DataCollector.plugins.DataMaps import ObjectMap, RelationshipMap
-from zope.interface import implementer
+from ZenPacks.community.Vault.lib.utils import SkipCertifContextFactory
 
+# Twisted Imports
+from twisted.internet import reactor
+from twisted.internet.defer import inlineCallbacks, returnValue
+from twisted.web.client import Agent, readBody
+from twisted.web.http_headers import Headers
 
-@implementer(IPolicyForHTTPS)
-class SkipCertifContextFactory(object):
-    def __init__(self):
-        self.default_policy = BrowserLikePolicyForHTTPS()
-
-    def creatorForNetloc(self, hostname, port):
-        return ssl.CertificateOptions(verify=False)
 
 class vault(PythonPlugin):
 
@@ -69,8 +59,9 @@ class vault(PythonPlugin):
             clustername =  result.get("cluster_name")
             if clustername and clustername not in clusternames:
                 clusternames[clustername] = result.get("cluster_id")
+        # In most cases, there will be one single cluster
+        # e.g. : {u'vault-cluster-e414fxxx': u'49898bd6-09fb-xxxx-xxxx-a8fc9c738d99'}
 
-        # TODO: Make sure ids are unique (class_id) - parent name ?
         for cluster, clusterid in clusternames.items():
             if not cluster:
                 continue
@@ -95,8 +86,8 @@ class vault(PythonPlugin):
                 if clustername != cluster:
                     continue
                 om_instance = ObjectMap()
-                om_instance.id = self.prepId('vaultinstance_{}'.format(instance))
-                om_instance.title = instance
+                om_instance.id = self.prepId('vc_{}_vaultinstance_{}'.format(cluster, instance))
+                om_instance.title = '{} ({})'.format(instance, cluster)
                 om_instance.cluster_name = data['cluster_name']
                 om_instance.host = instance
                 om_instance.version = data['version']

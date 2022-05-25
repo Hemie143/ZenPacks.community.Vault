@@ -1,32 +1,20 @@
 import json
 import logging
-import base64
-
-# Twisted Imports
-from twisted.internet import reactor, ssl
-from twisted.internet.defer import returnValue, inlineCallbacks, DeferredList
-from twisted.web.client import Agent, readBody, BrowserLikePolicyForHTTPS
-from twisted.web.http_headers import Headers
-from twisted.web.iweb import IPolicyForHTTPS
 
 # Zenoss imports
 from ZenPacks.zenoss.PythonCollector.datasources.PythonDataSource import PythonDataSourcePlugin
-from zope.interface import implementer
-from Products.ZenUtils.Utils import prepId
+from ZenPacks.community.Vault.lib.utils import SkipCertifContextFactory
 from Products.DataCollector.plugins.DataMaps import ObjectMap
+from Products.ZenUtils.Utils import prepId
 
+# Twisted Imports
+from twisted.internet import reactor
+from twisted.internet.defer import returnValue, inlineCallbacks, DeferredList
+from twisted.web.client import Agent, readBody
+from twisted.web.http_headers import Headers
 
 # Setup logging
 log = logging.getLogger('zen.Vault')
-
-# TODO: Move this factory in a library
-@implementer(IPolicyForHTTPS)
-class SkipCertifContextFactory(object):
-    def __init__(self):
-        self.default_policy = BrowserLikePolicyForHTTPS()
-
-    def creatorForNetloc(self, hostname, port):
-        return ssl.CertificateOptions(verify=False)
 
 
 class Vault(PythonDataSourcePlugin):
@@ -34,7 +22,9 @@ class Vault(PythonDataSourcePlugin):
         'zVaultPort',
         'zVaultInstances',
         'cluster_name',
-        'host'
+        'host',
+        'unavailable_nodes',
+        'sealed_nodes',
     )
 
     @classmethod
@@ -55,12 +45,9 @@ class Vault(PythonDataSourcePlugin):
         return {}
 
     @staticmethod
-    def add_tag(result, label):
-        return tuple((label, result))
-
-    @staticmethod
-    def get_code(response, instance):
+    def get_code(response, instance, cluster):
         d = dict(instance=instance,
+                 cluster=cluster,
                  code=response.code,
                  error=False,
                  response=response)
@@ -83,7 +70,6 @@ class Vault(PythonDataSourcePlugin):
         result['body'] = yield body
         returnValue(result)
 
-
     def collect(self, config):
         log.debug('Starting Vault collect')
 
@@ -100,7 +86,7 @@ class Vault(PythonDataSourcePlugin):
             url = 'https://{}:{}/v1/sys/health'.format(ds.host, ds.zVaultPort)
             try:
                 d = agent.request('GET', url, Headers(headers))
-                d.addCallback(self.get_code, ds.host)
+                d.addCallback(self.get_code, ds.host, ds.cluster_name)
                 d.addErrback(self.err_test, ds.host)
                 d.addCallback(self.get_body)
                 deferreds.append(d)
@@ -140,16 +126,17 @@ class Vault(PythonDataSourcePlugin):
             if not r[0]:
                 continue
             instance_data = r[1]
+            cluster = instance_data['cluster']
             instance = instance_data['instance']
-            component = prepId('vaultinstance_{}'.format(instance))
+            component = prepId('vc_{}_vaultinstance_{}'.format(cluster, instance))
             if instance_data['error']:
                 # In case of error, no connection ? unavailable ?
                 data['values'][component]['active'] = 0
                 # Retrieve cluster
-                for ds in config.datasources:
-                    if ds.component == component:
-                        cluster = ds.cluster_name
-                        break
+                # for ds in config.datasources:
+                #     if ds.component == component:
+                #         cluster = ds.cluster_name
+                #         break
                 # Update cluster metrics
                 cluster_metrics[cluster]['num_unavailable'] = cluster_metrics[cluster]['num_unavailable'] + 1
                 data['values'][component]['active'] = 0     # Unavailable
@@ -158,7 +145,6 @@ class Vault(PythonDataSourcePlugin):
             else:
                 # A JSON object is available
                 health = json.loads(instance_data['body'])
-                cluster = health['cluster_name']
                 sealed = 1 if health['sealed'] else 0
                 if sealed:
                     cluster_messages[cluster]['sealed'].append(instance)
@@ -176,17 +162,24 @@ class Vault(PythonDataSourcePlugin):
             data['values'][component]['num_active'] = metrics['num_active']
             data['values'][component]['num_unavailable'] = metrics['num_unavailable']
 
-        # Fill in the attributes of clusters with unavailable and sealed nodes
-        for cluster, cdata in cluster_messages.items():
-            data['maps'].append(
-                ObjectMap({
-                    'relname': 'vaultClusters',
-                    'modname': 'ZenPacks.community.Vault.VaultCluster',
-                    'id': prepId('vaultcluster_{}'.format(cluster)),
-                    'unavailable_nodes': cdata['unavailable'],
-                    'sealed_nodes': cdata['sealed'],
-                })
-            )
+        # If changed, fill in the attributes of clusters with unavailable and sealed nodes
+        for ds in config.datasources:
+            if ds.datasource != 'cluster' or ds.cluster_name not in cluster_messages:
+                continue
+            unavail_nodes_old = sorted(ds.unavailable_nodes)
+            sealed_nodes_old = sorted(ds.sealed_nodes)
+            unavail_nodes_new = sorted(cluster_messages[ds.cluster_name]['unavailable'])
+            sealed_nodes_new = sorted(cluster_messages[ds.cluster_name]['sealed'])
+            if unavail_nodes_old != unavail_nodes_new or sealed_nodes_old != sealed_nodes_new:
+                data['maps'].append(
+                    ObjectMap({
+                        'relname': 'vaultClusters',
+                        'modname': 'ZenPacks.community.Vault.VaultCluster',
+                        'id': ds.component,
+                        'unavailable_nodes': unavail_nodes_new,
+                        'sealed_nodes': sealed_nodes_new,
+                    })
+                )
         return data
 
     def onError(self, result, config):

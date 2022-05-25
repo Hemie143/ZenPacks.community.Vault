@@ -96,11 +96,14 @@ device_classes:
             plugin_classname: ZenPacks.community.Vault.dsplugins.vault.Vault
             datapoints:
               num_sealed:
-                rrdtype: GAUGE_MIN_0
+                rrdtype: GAUGE
+                rrdmin: 0
               num_unavailable:
-                rrdtype: GAUGE_MIN_0
+                rrdtype: GAUGE
+                rrdmin: 0
               num_active:
-                rrdtype: GAUGE_MIN_0
+                rrdtype: GAUGE
+                rrdmin: 0
         thresholds:
           Unavail:
             dsnames:
@@ -143,11 +146,17 @@ device_classes:
             plugin_classname: ZenPacks.community.Vault.dsplugins.vault.Vault
             datapoints:
               sealed:
-                rrdtype: GAUGE_MIN_0_MAX_1
+                rrdtype: GAUGE_MIN
+                rrdmin: 0
+                rrdmax: 1
               init:
-                rrdtype: GAUGE_MIN_0_MAX_1
+                rrdtype: GAUGE_MIN
+                rrdmin: 0
+                rrdmax: 1
               active:
-                rrdtype: GAUGE_MIN_0_MAX_2
+                rrdtype: GAUGE_MIN
+                rrdmin: 0
+                rrdmax: 2
         thresholds:
           Unavailable:
             type: DurationThreshold
